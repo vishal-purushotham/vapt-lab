@@ -1,0 +1,22 @@
+[
+  {
+    "timestamp": "2025-04-05T10:00:18.694789",
+    "package_name": "numpy",
+    "metrics": {
+      "version": "2.2.4",
+      "dependencies": [],
+      "location": "/home/akash/myproject/vapt-lab/venv/lib/python3.12/site-packages",
+      "size": 6132385164
+    }
+  },
+  {
+    "timestamp": "2025-04-05T10:00:24.148065",
+    "package_name": "numpy",
+    "metrics": {
+      "version": "2.2.4",
+      "dependencies": [],
+      "location": "/home/akash/myproject/vapt-lab/venv/lib/python3.12/site-packages",
+      "size": 6132385164
+    }
+  }
+]
