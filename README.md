@@ -1,4 +1,4 @@
-# Supply Chain Attack Detection System
+# AI Powered Supply Chain Attack Detection and Correction System
 
 A Python-based system for detecting and preventing supply chain attacks by monitoring package behavior. The system uses machine learning to detect anomalies and integrates with Wazuh for visualization and alerting.
 
