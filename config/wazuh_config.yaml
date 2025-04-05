@@ -1,0 +1,40 @@
+# Wazuh integration configuration
+
+# Index pattern for detector data
+index_pattern: vaptlab-*
+
+# Data stream settings
+data_stream:
+  name: vaptlab-detector
+  template: vaptlab-detector-template
+  retention:
+    days: 30
+    max_size: "5GB"
+
+# Alert level mappings
+alert_levels:
+  high_risk: 12    # Critical level
+  medium_risk: 8   # Warning level
+  low_risk: 4      # Notice level
+
+# Dashboard settings
+dashboard:
+  default_name: "Supply Chain Attack Detection"
+  default_description: "Dashboard for monitoring supply chain attacks"
+  refresh_interval: "1m"
+  panels:
+    - name: "Anomaly Scores"
+      type: "line"
+      height: 300
+    - name: "Risk Distribution"
+      type: "pie"
+      height: 200
+    - name: "Recent Alerts"
+      type: "table"
+      height: 400
+
+# API settings
+api:
+  retry_attempts: 3
+  timeout: 30
+  verify_ssl: false 

@@ -1,0 +1,37 @@
+# Detector configuration
+
+# Model parameters
+model:
+  feature_size: 10      # Number of input features
+  hidden_size: 64      # Hidden layer size
+  num_layers: 2        # Number of GRU layers
+  dropout: 0.2        # Dropout rate
+  window_size: 100    # Sequence length for time series
+
+# Detection settings
+detection:
+  batch_size: 32
+  threshold: 0.5      # Anomaly threshold
+  update_interval: 300  # Check for updates every 5 minutes
+
+# Training settings (for retraining)
+training:
+  learning_rate: 0.001
+  epochs: 100
+  validation_split: 0.2
+  early_stopping_patience: 10
+
+# Model paths
+paths:
+  model_save: "models/detector.pt"
+  scaler_save: "models/scaler.pkl"
+  
+# Monitoring settings
+monitoring:
+  features:
+    - package_size
+    - dependency_count
+    - update_frequency
+    - resource_usage
+    - api_calls
+  log_file: "logs/detector.log" 

@@ -1,0 +1,36 @@
+# Mitigation configuration for supply chain attack response
+
+# Response actions for different risk levels
+response_actions:
+  high_risk:
+    - rollback        # Roll back to last known good version
+    - block_updates   # Prevent future updates
+    - notify         # Send notifications
+  medium_risk:
+    - validate       # Validate package integrity
+    - notify         # Send notifications
+  low_risk:
+    - notify         # Send notifications only
+
+# Notification settings
+notification:
+  email:
+    enabled: false
+    recipients: []  # Add email addresses here
+  logging:
+    enabled: true
+    path: logs/mitigation.log
+
+# Risk level thresholds based on anomaly scores
+thresholds:
+  high_risk: 0.8    # Scores >= 0.8 trigger high risk actions
+  medium_risk: 0.6  # Scores >= 0.6 trigger medium risk actions
+  low_risk: 0.3     # Scores >= 0.3 trigger low risk actions
+
+# Integration settings
+wazuh:
+  enabled: true
+  alert_level:
+    high_risk: 12
+    medium_risk: 8
+    low_risk: 4 

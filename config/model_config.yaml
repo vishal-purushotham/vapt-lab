@@ -1,0 +1,64 @@
+# Supply Chain Attack Detection Model Configuration
+
+# Data settings
+data:
+  train_data_path: "data/raw/supply_chain_data.csv"  # Path to training data
+  feature_columns:  # Features to use for detection
+    - "package_size"
+    - "download_count"
+    - "dependency_count"
+    - "update_frequency"
+    - "author_reputation"
+  target_column: "is_malicious"  # Target variable
+
+# Model architecture
+model:
+  window_size: 100  # Sequence length to consider
+  hidden_dim: 64    # Hidden dimension size
+  num_layers: 2     # Number of GRU layers
+  kernel_size: 7    # Convolution kernel size
+  dropout: 0.2      # Dropout rate
+  save_path: "data/models/detector_model.pth"  # Where to save the model
+
+# Training parameters
+training:
+  n_epochs: 50
+  batch_size: 32
+  learning_rate: 0.001
+  val_split: 0.2    # Validation set size (20% of data)
+
+# Preprocessing
+preprocessing:
+  scaler_path: "data/models/feature_scaler.pkl"  # Where to save the scaler
+
+# Model Configuration
+
+model:
+  name: "SupplyChainDetector"
+  type: "MTAD-GAT"
+  parameters:
+    window_size: 10
+    feature_dim: 64
+    hidden_dim: 128
+    output_dim: 1
+    num_layers: 2
+    dropout: 0.2
+
+training:
+  batch_size: 32
+  epochs: 100
+  learning_rate: 0.001
+  validation_split: 0.2
+
+detection:
+  threshold: 0.8
+  min_anomaly_score: 0.7
+  window_stride: 1
+
+monitoring:
+  check_interval: 300  # 5 minutes
+  features:
+    - package_changes
+    - dependency_updates
+    - system_calls
+    - network_connections 
