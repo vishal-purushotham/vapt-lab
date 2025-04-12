@@ -272,20 +272,13 @@ class ReconstructionModel(nn.Module):
     def __init__(self, window_size, in_dim, hid_dim, out_dim, n_layers, dropout):
         super(ReconstructionModel, self).__init__()
         self.window_size = window_size
-        self.decoder = RNNDecoder(in_dim, hid_dim, n_layers, dropout)
         self.fc = nn.Linear(hid_dim, out_dim)
 
     def forward(self, x):
-        # x shape: (batch_size, hidden_dim)
-        h_end = x
-        h_end_rep = h_end.repeat(1, self.window_size, 1)  # Repeat hidden state for each time step
-        # h_end_rep shape: (batch_size, window_size, hidden_dim)
-
-        decoder_out = self.decoder(h_end_rep)
-        # decoder_out shape: (batch_size, window_size, hidden_dim)
-
-        out = self.fc(decoder_out)
-        # out shape: (batch_size, window_size, out_dim)
+        # Simplified: Pass the final hidden state directly through the linear layer
+        # This reconstructs a single step based on the window's final hidden state
+        # Output shape: (batch_size, out_dim)
+        out = self.fc(x)
         return out
 
 
@@ -347,7 +340,7 @@ class MTAD_GAT(nn.Module):
         self,
         n_features,
         window_size,
-        out_dim,
+        out_dim, 
         kernel_size=7,
         feat_gat_embed_dim=None,
         time_gat_embed_dim=None,
@@ -368,6 +361,7 @@ class MTAD_GAT(nn.Module):
         self.feature_gat = FeatureAttentionLayer(n_features, window_size, dropout, alpha, feat_gat_embed_dim, use_gatv2)
         self.temporal_gat = TemporalAttentionLayer(n_features, window_size, dropout, alpha, time_gat_embed_dim, use_gatv2)
         self.gru = GRULayer(3 * n_features, gru_hid_dim, gru_n_layers, dropout)
+        # Pass out_dim (which should be n_features if predicting all) to sub-models
         self.forecasting_model = Forecasting_Model(gru_hid_dim, forecast_hid_dim, out_dim, forecast_n_layers, dropout)
         self.recon_model = ReconstructionModel(window_size, gru_hid_dim, recon_hid_dim, out_dim, recon_n_layers, dropout)
 

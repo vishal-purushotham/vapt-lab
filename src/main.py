@@ -23,7 +23,7 @@ except ImportError as e:
     def run_training(args): pass
     def detect_anomalies(args): pass
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def main():
@@ -35,7 +35,7 @@ def main():
     # --- Train Mode Arguments ---
     parser_train = subparsers.add_parser('train', help='Train the anomaly detection model')
     # Configuration file
-    parser_train.add_argument('--config', type=str, default='../config/settings.yaml',
+    parser_train.add_argument('--config', type=str, default='config/settings.yaml', 
                               help='Path to the configuration YAML file.')
     # Data selection overrides
     parser_train.add_argument('--date', type=str, help='Date for training data (YYYY-MM-DD). Overrides config.')

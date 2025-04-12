@@ -66,7 +66,12 @@ def aggregate_data(df: pd.DataFrame, time_column: str, agg_config: dict, time_wi
     # aggregated_df = aggregated_df.fillna(0) # Example: fill with 0
 
     logger.info(f"Aggregation complete. Result shape: {aggregated_df.shape}")
-    return aggregated_df.reset_index()
+
+    # Fill potential missing values resulting from aggregation (e.g., empty intervals)
+    aggregated_df = aggregated_df.fillna(0)
+
+    # Return the dataframe with the timestamp as the index
+    return aggregated_df
 
 # --- Wazuh/OpenSearch Interaction (Simplified from WazuhDataIngestor) ---
 def get_index_name_for_date(date_str: str, prefix: str = "wazuh-alerts-4.x-") -> str:

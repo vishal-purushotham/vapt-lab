@@ -35,14 +35,15 @@ DEFAULT_CONFIG = {
             'data.dstport': 'nunique',
         },
         'aggregation_window': '5min',
-        'time_column': 'timestamp'
+        'time_column': 'timestamp',
+        'numeric_columns': None
     },
     'model': {
         'window_size': 12,
         'target_dims': None,
         # Parameters needed to reconstruct the model architecture
         'n_features': None, # Will be loaded from saved info or inferred
-        'hidden_size': 150,
+        'gru_hid_dim': 150, # Renamed from hidden_size if needed
         'gru_layers': 1,
         'use_gatv2': True,
         'use_bias': True,
@@ -50,8 +51,8 @@ DEFAULT_CONFIG = {
         'kernel_size': 7,
         'feat_gat_embed_dim': None,
         'time_gat_embed_dim': None,
-        'fc_n_layers': 3,
-        'fc_hid_dim': 150,
+        'forecast_n_layers': 3, # Corrected param name
+        'forecast_hid_dim': 150, # Corrected param name
         'recon_n_layers': 1,
         'recon_hid_dim': 150,
         'alpha': 0.2
@@ -162,9 +163,9 @@ def detect_anomalies(args):
             feat_gat_embed_dim=model_params.get('feat_gat_embed_dim'),
             time_gat_embed_dim=model_params.get('time_gat_embed_dim'),
             gru_n_layers=model_params.get('gru_layers', 1),
-            gru_hid_dim=model_params.get('hidden_size', 150),
-            fc_n_layers=model_params.get('fc_layers', 3),
-            fc_hid_dim=model_params.get('hidden_size', 150),
+            gru_hid_dim=model_params.get('gru_hid_dim', 150), # Renamed from hidden_size if needed
+            forecast_n_layers=model_params.get('forecast_n_layers', 3), # Corrected param name
+            forecast_hid_dim=model_params.get('forecast_hid_dim', 150), # Corrected param name
             recon_n_layers=model_params.get('recon_layers', 1),
             recon_hid_dim=model_params.get('recon_hid_dim', 150),
             alpha=model_params.get('alpha', 0.2),
@@ -192,7 +193,8 @@ def detect_anomalies(args):
     logger.info(f"Loading and preparing data for {config['data']['date']}...")
     wazuh_conf = config.get('wazuh', {})
     if not wazuh_conf.get('host') or not wazuh_conf.get('port') or not wazuh_conf.get('auth'):
-         logger.error("Wazuh connection details missing in config ('wazuh' section). Ensure training config was loaded or provide in detection config.")
+         # This case might occur if training_config.yaml failed to load
+         logger.error("Wazuh connection details missing in effective config ('wazuh' section). Ensure training_config.yaml exists and is valid, or provide details via settings.yaml/CLI.")
          return
 
     data_df = load_and_prepare_data(
@@ -217,24 +219,32 @@ def detect_anomalies(args):
 
     logger.info(f"Data loaded successfully. Shape: {data_df.shape}")
 
+    # Convert MultiIndex columns to string format 'col_agg' for consistency
+    if isinstance(data_df.columns, pd.MultiIndex):
+        data_df.columns = [f"{col[0]}_{col[1]}" for col in data_df.columns]
+        logger.info(f"Converted MultiIndex columns to strings: {data_df.columns.tolist()}")
+
     # --- 4. Preprocess Data ---
     logger.info("Preprocessing data...")
     time_col = config['data']['time_column']
-    # Ensure columns match the scaler's expected features
-    try:
-        # Scaler fitted on data_df[numeric_cols] during training
-        numeric_cols = scaler.feature_names_in_
-        data_to_normalize = data_df[numeric_cols].values
-    except (AttributeError, KeyError) as e:
-        logger.error(f"Error identifying/extracting numeric columns based on scaler: {e}. Trying select_dtypes.")
-        # Fallback if scaler info is missing
-        numeric_cols = data_df.select_dtypes(include=np.number).columns.tolist()
-        if time_col in numeric_cols:
-            numeric_cols.remove(time_col)
-        if len(numeric_cols) != model_params['n_features']:
-            logger.error(f"Number of numeric columns ({len(numeric_cols)}) does not match model's expected features ({model_params['n_features']}).")
-            return
-        data_to_normalize = data_df[numeric_cols].values
+
+    # Get the exact numeric columns used during training from the saved config
+    numeric_cols_config = config['data'].get('numeric_columns')
+    if not numeric_cols_config:
+        logger.error("Numeric columns list not found in the loaded config ('data.numeric_columns'). Ensure it was saved during training or provided.")
+        return
+
+    # numeric_cols_config should now be a list of strings like 'rule.level_mean'
+    numeric_cols = numeric_cols_config
+    logger.info(f"Using numeric columns from config for scaling: {numeric_cols}")
+
+    # Check if all required columns exist in the loaded data
+    missing_cols = [col for col in numeric_cols if col not in data_df.columns]
+    if missing_cols:
+        logger.error(f"Missing columns required for scaling in the loaded data: {missing_cols}")
+        return
+
+    data_to_normalize = data_df[numeric_cols].values
 
     # Normalize using the loaded scaler
     try:
@@ -252,23 +262,21 @@ def detect_anomalies(args):
     logger.info("Predicting and calculating anomaly scores...")
     all_preds = []
     all_recons = []
-    all_actuals = [] # Store actual values corresponding to predictions/reconstructions
+    all_actuals = [] # Store actual values (y) corresponding to predictions
+    all_inputs_last_step = [] # Store last step of input window (x) for reconstruction comparison
 
     with torch.no_grad():
         for x, y in loader:
             x = x.to(device)
             y = y.to(device)
 
-            y_hat, _ = model(x) # Forecast
-
-            # Reconstruction of the last point in the window (y)
-            recon_x = torch.cat((x[:, 1:, :], y), dim=1)
-            _, window_recon = model(recon_x)
-            last_recon = window_recon[:, -1, :] # Get reconstruction of y
+            # Get forecast (y_hat) and reconstruction (recons) from the single forward pass
+            y_hat, recons = model(x)
 
             all_preds.append(y_hat.detach().cpu().numpy())
-            all_recons.append(last_recon.detach().cpu().numpy())
-            all_actuals.append(y.squeeze(1).detach().cpu().numpy()) # y is the actual value for the predicted step
+            all_recons.append(recons.detach().cpu().numpy()) # Append the direct reconstruction output
+            all_actuals.append(y.detach().cpu().numpy()) # y is the actual value for the predicted step
+            all_inputs_last_step.append(x[:, -1, :].detach().cpu().numpy()) # Store last x step for recon comparison
 
     if not all_preds:
         logger.warning("No predictions generated (check data length vs window size).")
@@ -277,24 +285,22 @@ def detect_anomalies(args):
     preds_np = np.concatenate(all_preds, axis=0)
     recons_np = np.concatenate(all_recons, axis=0)
     actual_np = np.concatenate(all_actuals, axis=0)
+    inputs_last_step_np = np.concatenate(all_inputs_last_step, axis=0)
 
     # Calculate anomaly score
     gamma = config['detection']['gamma']
     # Ensure shapes match, sometimes dimensions might be squeezed
-    if actual_np.ndim == 1 and preds_np.ndim == 2:
-         actual_np = actual_np.reshape(-1, 1) # Reshape if needed
-         if actual_np.shape[1] != preds_np.shape[1]:
-              logger.error(f"Shape mismatch between actual ({actual_np.shape}) and preds ({preds_np.shape}) after reshape.")
-              return
-    elif actual_np.shape != preds_np.shape:
+    if actual_np.shape != preds_np.shape:
         logger.error(f"Shape mismatch between actual ({actual_np.shape}) and preds ({preds_np.shape})")
         return
-    if actual_np.shape != recons_np.shape:
-        logger.error(f"Shape mismatch between actual ({actual_np.shape}) and recons ({recons_np.shape})")
+
+    # Compare recons with the last step of the corresponding input window
+    if inputs_last_step_np.shape != recons_np.shape:
+        logger.error(f"Shape mismatch between input_last_step ({inputs_last_step_np.shape}) and recons ({recons_np.shape})")
         return
 
     error_forecast = np.sqrt(np.sum((preds_np - actual_np)**2, axis=1))
-    error_recon = np.sqrt(np.sum((recons_np - actual_np)**2, axis=1))
+    error_recon = np.sqrt(np.sum((recons_np - inputs_last_step_np)**2, axis=1))
     anomaly_scores = error_forecast + gamma * error_recon
 
     # Align scores with original timestamps

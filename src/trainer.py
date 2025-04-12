@@ -89,39 +89,122 @@ class Trainer:
                 self.writer.add_text("args_summary", args_summary)
             logger.info(f"TensorBoard logging enabled. Log directory: {self.log_dir}")
 
+    def _build_model(self, **params):
+        """Builds the MTAD-GAT model."""
+        logger = logging.getLogger(__name__)
+
+        try:
+            # Extract parameters, providing defaults
+            n_features = params['n_features']
+            window_size = params['window_size']
+            hidden_size = params.get('hidden_size', 150) # Used for gru_hid_dim
+            # No longer using fc_dropout, gru_dropout, target_dims directly from top-level config here
+            gru_layers = params.get('gru_layers', 1)
+            use_gatv2 = params.get('use_gatv2', True)
+            use_bias = params.get('use_bias', True)
+            dropout = params.get('dropout', 0.3) # Get the single dropout value
+
+            model = MTAD_GAT(
+                n_features=n_features,
+                window_size=window_size,
+                out_dim=n_features, # Predict all features
+                gru_hid_dim=hidden_size, # Pass GRU hidden size
+                gru_n_layers=gru_layers,
+                dropout=dropout, # Pass the single dropout value
+                use_gatv2=use_gatv2,
+                # Pass other MTAD_GAT specific params, getting from config or using defaults
+                kernel_size=params.get('kernel_size', 7),
+                feat_gat_embed_dim=params.get('feat_gat_embed_dim', None),
+                time_gat_embed_dim=params.get('time_gat_embed_dim', None),
+                forecast_n_layers=params.get('forecast_n_layers', 1),
+                forecast_hid_dim=params.get('forecast_hid_dim', 150),
+                recon_n_layers=params.get('recon_n_layers', 1),
+                recon_hid_dim=params.get('recon_hid_dim', 150),
+                alpha=params.get('alpha', 0.2)
+                # Note: MTAD_GAT doesn't seem to use use_bias directly in its __init__ signature
+            )
+            logger.info(f"MTAD-GAT model built successfully.")
+            return model
+        except KeyError as e:
+            logger.error(f"Missing required parameter for model building: {e}")
+
     def _get_target_output(self, data: torch.Tensor) -> torch.Tensor:
-        """Extracts the target dimensions from data if target_dims is specified."""
+        """Selects the target dimensions from the data based on self.target_dims.
+
+        Args:
+            data (torch.Tensor): Input data tensor.
+
+        Returns:
+            torch.Tensor: Target data tensor with selected dimensions.
+        """
         if self.target_dims is None:
             return data
-        elif isinstance(self.target_dims, int):
-            return data[:, :, [self.target_dims]] # Ensure it remains 3D if single dim
+
+        # Ensure target_dims is a list
+        dims_to_select = self.target_dims
+        if isinstance(dims_to_select, int):
+            dims_to_select = [dims_to_select]
+
+        if data.ndim == 3: # Input like x (batch, window, features)
+            target_data = data[:, :, dims_to_select]
+        elif data.ndim == 2: # Input like y or x[:,-1,:] (batch, features)
+            target_data = data[:, dims_to_select]
         else:
-            return data[:, :, self.target_dims]
+            raise ValueError(f"_get_target_output received tensor with unexpected ndim: {data.ndim}")
+
+        return target_data
 
     def _process_batch(self, x: torch.Tensor, y: torch.Tensor) -> tuple:
-        """Processes a single batch for loss calculation."""
+        """Process a single batch of data for training.
+
+        Args:
+            x (torch.Tensor): Input data tensor (batch_size, window_size, n_features).
+            y (torch.Tensor): Target data tensor (batch_size, forecast_horizon, n_features).
+
+        Returns:
+            tuple: forecast_loss, recon_loss, total_loss.
+        """
         x = x.to(self.device)
         y = y.to(self.device)
 
         preds, recons = self.model(x)
 
-        # Select target dimensions if specified
-        x_target = self._get_target_output(x)
-        y_target = self._get_target_output(y)
+        # --- Match original idps-escape logic ---
+        if self.target_dims is not None:
+            x = x[:, :, self.target_dims]
+            y = y[:, :, self.target_dims].squeeze(-1) # Filter and squeeze y's last dim
+            # Filter recons to match filtered x if target_dims is used
+            recons = recons[:, :, self.target_dims]
 
-        # Adjust dimensions for loss calculation if necessary (e.g., remove feature dim if 1)
-        if y_target.shape[-1] == 1:
-             y_target = y_target.squeeze(-1)
-        if preds.shape[-1] == 1:
-             preds = preds.squeeze(-1)
-        # Similar adjustments might be needed for recons and x_target depending on model output
+        # --- Debug: Log shapes before loss calculation ---
+        logger.debug(f"Shape pre-loss - y: {y.shape}, preds: {preds.shape}")
+        logger.debug(f"Shape pre-loss - x: {x.shape}, recons: {recons.shape}")
 
-        # Calculate losses - Use sqrt for RMSE
-        forecast_loss = torch.sqrt(self.forecast_criterion(y_target, preds))
-        recon_loss = torch.sqrt(self.recon_criterion(x_target, recons))
+        # Squeeze dimension 1 if necessary (original logic)
+        if preds.ndim == 3:
+            preds = preds.squeeze(1) # Squeeze the forecast horizon dimension if present
+        if y.ndim == 3:
+            # Only squeeze if the dimension is indeed 1 (e.g. forecast horizon=1)
+            if y.shape[1] == 1:
+                y = y.squeeze(1) # Squeeze dim 1 of y
+            # If forecast horizon > 1, ensure preds also has that dimension or handle mismatch
+            # Current MTAD_GAT returns (batch, features) for preds, need alignment if y_target is (batch, horizon>1, features)
+            # For now, assume horizon=1 or model/target mismatch needs addressing elsewhere
+            elif preds.ndim == 2: # preds is (batch, features), y is (batch, horizon>1, features)
+                logger.warning(f"Potential forecast shape mismatch: preds {preds.shape} vs y {y.shape}. Using y[:, -1, :] for loss.")
+                y = y[:, -1, :] # Use last step of target horizon for now
+
+        # Calculate losses
+        forecast_loss = torch.sqrt(self.forecast_criterion(y, preds))
+        # Compare recons (batch, features) with the LAST step of x (batch, features)
+        x_last_step = x[:, -1, :]
+        recon_loss = torch.sqrt(self.recon_criterion(x_last_step, recons))
+
+        # Debug shapes *after* potential filtering/squeezing
+        logger.debug(f"Shape final - y: {y.shape}, preds: {preds.shape}")
+        logger.debug(f"Shape final - x: {x.shape}, recons: {recons.shape}")
 
         total_loss = forecast_loss + recon_loss
-
         return forecast_loss, recon_loss, total_loss
 
     def fit(self, train_loader: DataLoader, val_loader: DataLoader = None):
@@ -137,6 +220,10 @@ class Trainer:
 
             # --- Training Loop ---
             for x, y in train_loader:
+                x, y = x.to(self.device), y.to(self.device)
+ 
+                preds, recons = self.model(x)
+
                 self.optimizer.zero_grad()
                 forecast_loss, recon_loss, total_loss = self._process_batch(x, y)
                 total_loss.backward()
@@ -167,6 +254,9 @@ class Trainer:
                     self.best_val_loss = val_total_epoch_loss
                     self.save()
                     logger.info(f"Epoch {epoch+1}: New best model saved with val_loss={self.best_val_loss:.5f}")
+            else:
+                # If no validation, the model is saved at the end of training (see below)
+                pass # Explicitly do nothing here, save happens after loop
 
             # --- Logging ---
             if self.log_tensorboard:
@@ -196,6 +286,7 @@ class Trainer:
 
         # Save the model at the end of training if no validation set was used
         if val_loader is None:
+            logger.info("Validation skipped. Saving final model.")
             self.save(final=True)
 
         train_time = int(time.time() - train_start)

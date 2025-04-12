@@ -33,22 +33,23 @@ data:
   aggregation_window: "5min" # Time window for aggregation (e.g., '1min', '5T', '10S', '1H')
 
 model:
-  window_size: 12       # Number of aggregated intervals per sequence (e.g., 12 * 5min = 1 hour)
-  # n_features: null    # Number of features - This will be determined automatically from the data
-  hidden_size: 150      # Size of hidden layers in GRU/FC networks
-  dropout: 0.3          # Dropout rate
-  gru_layers: 1         # Number of GRU layers
-  use_gatv2: true       # Whether to use GATv2 attention
-  use_bias: true        # Whether to use bias in layers
-  target_dims: null     # Optional: list of feature indices (after aggregation/scaling) to focus loss on. null means all features.
-  # Other potential model parameters (defaults from model.py used if not specified here)
-  # kernel_size: 7
+  window_size: 12         # Number of aggregated intervals per sequence
+  kernel_size: 7          # Kernel size for the initial Conv1D layer
+  gru_layers: 1           # Number of GRU layers
+  gru_hid_dim: 150        # Hidden dimension for GRU layer
+  forecast_n_layers: 3    # Number of layers in the forecasting model
+  forecast_hid_dim: 150   # Hidden dimension for forecasting model
+  recon_n_layers: 1       # Number of layers for reconstruction model (currently unused by FC recon)
+  recon_hid_dim: 150      # Hidden dimension for reconstruction model (currently unused by FC recon)
+  dropout: 0.3            # General dropout rate for attention layers
+  alpha: 0.2              # Alpha for LeakyReLU in attention layers
+  use_gatv2: true         # Whether to use GATv2 attention
+  # Optional: Specify embedding dimensions if needed, otherwise defaults are used
   # feat_gat_embed_dim: null
   # time_gat_embed_dim: null
-  # fc_n_layers: 3
-  # recon_n_layers: 1
-  # recon_hid_dim: 150
-  # alpha: 0.2
+  # Optional: Specify target_dims if you only want to predict/reconstruct specific features
+  # target_dims: [0, 1] # Example: Predict/reconstruct only the first two features
+  target_dims: null       # Default: Predict/reconstruct all features
 
 training:
   epochs: 50            # Number of training epochs
