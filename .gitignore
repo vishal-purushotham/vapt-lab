@@ -1,0 +1,6 @@
+# .gitignore
+wazuh-install-files.tar
+output/
+*.pyc
+__pycache__/
+venv/

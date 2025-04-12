@@ -1,0 +1,62 @@
+# Configuration for AI-Powered Supply Chain Attack Detection
+
+wazuh:
+  host: 172.22.252.217 # Replace with your Wazuh/OpenSearch host IP or hostname
+  port: 9200      # Default OpenSearch port
+  auth:
+    user: admin  # Replace with your Wazuh/OpenSearch username
+    password: "o5sIK9iPhM8KF4qL5pcY4oN+Rceg*.5V" # Replace with your Wazuh/OpenSearch password
+  use_ssl: true
+  verify_certs: false # Set to true if using valid, trusted SSL certificates
+  ssl_show_warn: false
+  index_prefix: "wazuh-alerts-4.x-"
+
+data:
+  date: "2024-01-15" # Default date to fetch data for training (YYYY-MM-DD). Override via CLI.
+  start_time: "00:00:00" # Start time (HH:MM:SS)
+  end_time: "23:59:59"   # End time (HH:MM:SS)
+  time_column: "timestamp" # Name of the timestamp column in Wazuh alerts
+
+  # Define columns to fetch from Wazuh and their expected data types
+  columns_config:
+    timestamp: datetime # Essential
+    rule.level: int     # Common field
+    agent.id: string    # Common field
+    agent.name: string  # Common field
+    data.command: string # May or may not exist, keep for now
+
+  # Define how numeric features should be aggregated over the time window
+  # Keys are column names, values are aggregation functions (e.g., mean, sum, count, nunique, max, min)
+  aggregation_config:
+    rule.level: ["mean", "max", "count"] # Avg/Max alert level, total count
+
+  aggregation_window: "5min" # Time window for aggregation (e.g., '1min', '5T', '10S', '1H')
+
+model:
+  window_size: 12       # Number of aggregated intervals per sequence (e.g., 12 * 5min = 1 hour)
+  # n_features: null    # Number of features - This will be determined automatically from the data
+  hidden_size: 150      # Size of hidden layers in GRU/FC networks
+  dropout: 0.3          # Dropout rate
+  gru_layers: 1         # Number of GRU layers
+  use_gatv2: true       # Whether to use GATv2 attention
+  use_bias: true        # Whether to use bias in layers
+  target_dims: null     # Optional: list of feature indices (after aggregation/scaling) to focus loss on. null means all features.
+  # Other potential model parameters (defaults from model.py used if not specified here)
+  # kernel_size: 7
+  # feat_gat_embed_dim: null
+  # time_gat_embed_dim: null
+  # fc_n_layers: 3
+  # recon_n_layers: 1
+  # recon_hid_dim: 150
+  # alpha: 0.2
+
+training:
+  epochs: 50            # Number of training epochs
+  batch_size: 128       # Batch size for training
+  init_lr: 0.001        # Initial learning rate for Adam optimizer
+  val_split: 0.1        # Proportion of data to use for validation (0.0 to disable)
+  use_cuda: true        # Attempt to use GPU if available
+  output_dir: "./output" # Base directory for all outputs
+  model_save_path: "models" # Subdirectory for saved models (relative to output_dir)
+  log_dir: "logs"         # Subdirectory for TensorBoard logs (relative to output_dir)
+  scaler_file: "scaler.pkl" # Filename for the saved scaler (relative to output_dir)

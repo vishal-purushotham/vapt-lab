@@ -1,0 +1,10 @@
+# Python dependencies will be listed here
+# Likely includes: torch, pandas, numpy, pyyaml, requests
+opensearch-py>=2.0.0,<3.0.0 # For connecting to Wazuh/OpenSearch
+pandas
+numpy
+pyyaml
+requests
+torch>=1.8.0 # Specify a reasonable minimum torch version
+scikit-learn>=1.0 # For MinMaxScaler
+tensorboard>=2.8.0 # For logging training progress
