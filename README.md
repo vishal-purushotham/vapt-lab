@@ -1,15 +1,28 @@
-# AI-Powered Supply Chain Attack Detection
+# AI-Powered Supply Chain Attack Detection using Wazuh Data
 
-This project implements an AI-based anomaly detection system 
-for identifying potential supply chain attacks using Wazuh SIEM alert data. It adapts the MTAD-GAT model.
+This project implements an AI-based anomaly detection system aimed at identifying potential **supply chain attacks** by analyzing patterns in Wazuh SIEM alert data. It leverages the MTAD-GAT (Multivariate Time-Series Anomaly Detection with Graph Attention Networks) model to learn baseline system behavior from alert statistics and flag significant deviations that might indicate compromise.
 
-## Features
+## Overview
 
-*   Fetches and preprocesses Wazuh alert data from OpenSearch.
-*   Aggregates alert data into time-series features.
-*   Trains an MTAD-GAT (Multivariate Time-Series Anomaly Detection with Graph Attention Networks) model.
-*   Detects anomalies in new Wazuh data using the trained model.
-*   Provides a configurable framework via YAML settings.
+The system works by:
+
+1.  **Fetching Data:** Connecting to a Wazuh (OpenSearch) instance to retrieve security alerts relevant to system activity (e.g., file integrity changes, process execution, network connections) for a specified date.
+2.  **Aggregation:** Aggregating these raw alerts into fixed time windows (e.g., 5 minutes) based on configured statistics (e.g., mean/max/count of `rule.level`). This transforms discrete events into a continuous time-series representation of system state.
+3.  **Training (`train` mode):**
+    *   Learning the "normal" patterns of aggregated alert activity using the MTAD-GAT model.
+    *   Saving the trained model (`.pt`), data scaler (`.pkl`), and the exact configuration used (`training_config.yaml`). **This `training_config.yaml` is critical for ensuring consistency during detection.**
+4.  **Detection (`detect` mode):**
+    *   Loading a pre-trained model, scaler, and its `training_config.yaml`.
+    *   Fetching and aggregating data for a new date.
+    *   Calculating an anomaly score for each time window, measuring how much the current activity deviates from the learned norm.
+    *   Flagging time windows where the score exceeds a defined threshold, indicating potentially anomalous behavior potentially related to a supply chain compromise.
+
+## Key Concepts
+
+*   **Supply Chain Context:** The underlying assumption is that certain types of supply chain attacks (e.g., compromised software updates, malicious dependencies) will manifest as detectable anomalies in system logs/alerts monitored by Wazuh.
+*   **Anomaly Score:** Represents how unusual the aggregated alert patterns are in a given time window compared to the learned baseline. Higher scores indicate greater deviation.
+*   **Aggregation Window:** The time interval (e.g., `5min`) over which raw alerts are summarized. An anomaly score applies to the entire window.
+*   **`training_config.yaml`:** Saved during training, this file captures the model architecture, features used, and scaling parameters, ensuring the detection process correctly interprets the trained model.
 
 ## Project Structure
 
@@ -17,187 +30,104 @@ for identifying potential supply chain attacks using Wazuh SIEM alert data. It a
 vaptproject/
 ├── README.md                 # This file
 ├── requirements.txt          # Python dependencies
-├── config/                   # Configuration files
-│   └── settings.yaml         # Main configuration (Wazuh, Data, Model, Training)
-├── src/                      # Source code
-│   ├── main.py               # Main entry point (train/detect modes)
-│   ├── data_loader.py        # Wazuh data fetching and preparation
+├── config/
+│   └── settings.yaml         # Main config (Wazuh, Data Aggregation, Model)
+├── src/
+│   ├── main.py               # CLI entry point (train/detect)
+│   ├── data_loader.py        # Wazuh data handling
 │   ├── model.py              # MTAD-GAT model definition
-│   ├── trainer.py            # Training loop implementation
-│   ├── train.py              # Orchestrates the training process
-│   ├── detect.py             # Orchestrates the anomaly detection process
-│   ├── correction.py         # Placeholder for anomaly correction/response
-│   └── utils.py              # Utility functions (normalization, datasets)
-├── data/                     # Sample data (if any)
-│   └── sample_wazuh_alerts.json # Example Wazuh alert format
-└── output/                   # Default directory for outputs (created automatically)
-    ├── models/               # Saved trained models
+│   ├── trainer.py            # Training loop
+│   ├── train.py              # Training orchestration
+│   ├── detect.py             # Detection orchestration
+│   ├── correction.py         # Placeholder for response actions
+│   └── utils.py              # Utilities
+└── output/                   # Default output directory
+    ├── models/               # Saved models (e.g., model_final.pt)
     ├── logs/                 # TensorBoard logs
-    └── scaler.pkl            # Saved data scaler
-    └── training_config.yaml  # Saved config used for training
+    ├── scaler.pkl            # Saved data scaler
+    └── training_config.yaml  # CRUCIAL: Config from training run
 ```
 
 ## Setup
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <your-repo-url>
-    cd vaptproject
-    ```
-2.  **Create a virtual environment (recommended):**
+1.  **Clone Repository:** `git clone <your-repo-url>` and `cd vaptproject`
+2.  **Virtual Environment (Recommended):**
     ```bash
     python -m venv venv
-    # Activate the environment
-    # Windows:
-    venv\Scripts\activate
-    # macOS/Linux:
-    source venv/bin/activate
+    # Windows: venv\Scripts\activate
+    # macOS/Linux: source venv/bin/activate
     ```
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-    *Note: Ensure you have a compatible PyTorch version installed (CPU or GPU depending on your hardware and `use_cuda` setting).* 
-    *See [PyTorch installation instructions](https://pytorch.org/get-started/locally/).*
+3.  **Install Dependencies:** `pip install -r requirements.txt` (Ensure compatible Python & PyTorch versions).
 
-## Wazuh Installation and Configuration (WSL Example)
+## Wazuh Environment Integration
 
-This project requires a running Wazuh installation (Indexer, Manager, Dashboard) to source alert data. These instructions assume Wazuh is installed within a WSL (Windows Subsystem for Linux) distribution.
+This project requires access to a running Wazuh Indexer (OpenSearch) instance.
 
-1.  **Install Wazuh:** Follow the official Wazuh documentation for installation. A helper script `wazuh-install.sh` might be included in this repository for convenience (review and adapt as needed).
-2.  **Find WSL IP Address:** After installation, find the IP address assigned to your WSL instance. Run this command within WSL:
-    ```bash
-    ip addr | grep 'eth0' | grep 'inet '
-    ```
-    Note the IP address (e.g., `172.22.252.217`). You will need this for the Dashboard, Agents, and the Python script configuration.
-3.  **Configure Wazuh Indexer for External Access:** By default, the Wazuh Indexer might only listen on `127.0.0.1`. To allow connections from your Windows host (where the Python script runs), you need to change this:
-    *   Edit the Indexer configuration file in WSL:
-        ```bash
-        sudo nano /etc/wazuh-indexer/opensearch.yml
-        ```
-    *   Find the line `#network.host:` or `network.host: 127.0.0.1`.
-    *   Change or uncomment it to:
-        ```yaml
-        network.host: 0.0.0.0
-        ```
-    *   Save the file (Ctrl+X, Y, Enter in nano) and restart the Indexer service:
-        ```bash
-        sudo systemctl restart wazuh-indexer
-        ```
-    *   Verify the change (optional): `sudo ss -tulnp | grep ':9200'` should now show `0.0.0.0:9200` or `:::9200`.
-4.  **Access Wazuh Dashboard:** Open `https://<YOUR_WSL_IP>` in your browser. Log in using the `admin` credentials obtained during Wazuh installation.
-5.  **(Optional) Check Manager Listening Ports:** Ensure the manager is listening for agent connections (UDP 1514, TCP 1515) externally:
-    ```bash
-    sudo ss -tulnp | grep -E ':1514|:1515'
-    ```
-    If only `127.0.0.1` is shown, you may need to adjust the manager's `ossec.conf` for remote connections (refer to Wazuh documentation).
-
-## Wazuh Agent Installation (Windows Host Example)
-
-To feed data into Wazuh, install agents on the machines you want to monitor.
-
-1.  **Open PowerShell as Administrator** on the Windows machine.
-2.  **Run the installation command**, replacing `<YOUR_WSL_IP>` with the actual IP found earlier:
-    ```powershell
-    Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-latest.msi -OutFile $env:TEMP\wazuh-agent.msi; msiexec.exe /i $env:TEMP\wazuh-agent.msi /q WAZUH_MANAGER='<YOUR_WSL_IP>' WAZUH_REGISTRATION_SERVER='<YOUR_WSL_IP>'
-    ```
-    *(Alternatively, follow the "Deploy New Agent" steps within the Wazuh Dashboard for a potentially customized command.)*
-3.  **Start the Wazuh Agent Service**:
-    ```powershell
-    NET START WazuhSvc
-    ```
-4.  **Verify Connection:** Check the "Agents" section in the Wazuh Dashboard. The new agent should appear as "Active" after a minute or two.
-    *   **Troubleshooting:** If the agent shows as "Disconnected", check the agent log file `C:\Program Files (x86)\ossec-agent\ossec.log` for error messages. Common issues include incorrect manager IP, firewall blocking ports (1514/1515), or the manager service not running.
+**(Refer to the original README sections or Wazuh documentation for detailed setup if needed. Key step: Ensure the Wazuh Indexer allows external connections by setting `network.host: 0.0.0.0` in its configuration and restarting the service.)**
 
 ## Configuration (`config/settings.yaml`)
 
-1.  **`wazuh` section:**
-    *   Set `host` to your Wazuh Indexer's IP address (e.g., the WSL IP `172.22.252.217`).
-    *   Update `port` (usually 9200), `auth` (`user`, `password`) with your Wazuh Indexer/OpenSearch credentials.
-    *   Adjust `use_ssl` and `verify_certs` as needed for your OpenSearch setup (defaults usually work for standard Wazuh installs).
-2.  **`data` section:**
-    *   Configure `columns_config` with fields you want to extract from Wazuh alerts and their types. **Important:** Only include fields that *actually exist* in your alert data. Check sample alerts in the Wazuh Dashboard (Discover tab) if unsure.
-    *   Define `aggregation_config` for how numeric features should be aggregated within the `aggregation_window`. Ensure columns listed here exist in `columns_config` and the data.
-3.  **`model` section:**
-    *   Adjust parameters like `window_size`, `hidden_size`, `dropout` if needed. `n_features` is determined automatically during training.
-4.  **`training` section:**
-    *   Set `epochs`, `batch_size`, `init_lr`, `val_split`, and `output_dir`.
+Update this file before running:
+
+*   **`wazuh` section:** Set `host`, `port`, `auth` (user/password) for your Wazuh Indexer.
+*   **`data` section:** Configure `columns_config` (fields to extract), `aggregation_config` (stats like mean, max, count), `aggregation_window`.
+*   **`model` & `training` sections:** Define model hyperparameters and training settings.
 
 ## Usage
 
-The main entry point is `src/main.py`, which supports two modes: `train` and `detect`.
-
 ### 1. Training the Model
 
-**Prerequisite:** Ensure you have sufficient Wazuh alert data for the target training date, spanning a duration longer than `model.window_size * data.aggregation_window`.
-
-Run the following command from the `vaptproject` directory:
+**Goal:** Learn normal system behavior from historical Wazuh alerts.
 
 ```bash
-python src/main.py train [OPTIONS]
+python src/main.py train --date <YYYY-MM-DD> [OPTIONS]
 ```
 
-**Key Options:**
-
-*   `--config <path>`: Path to the YAML configuration file (default: `config/settings.yaml`).
-*   `--date <YYYY-MM-DD>`: Override the date specified in the config for fetching training data. **Crucial: Choose a date with enough existing alert data.**
-*   `--epochs <N>`: Override the number of training epochs.
-*   `--output-dir <path>`: Override the output directory for models, logs, and scaler.
-*   `--use-cuda / --no-use-cuda`: Explicitly enable/disable GPU usage.
-*   `--help`: Show all available options.
-
-**Example:**
-
-```bash
-# Train using settings from config/settings.yaml for date 2024-07-10
-python src/main.py train --date 2024-07-10
-
-# Train for 100 epochs, saving outputs to ./my_training_run
-python src/main.py train --epochs 100 --output-dir ./my_training_run
-```
-
-Training outputs (model, scaler, logs, training config copy) will be saved in the specified `output_dir` (default: `./output`).
+*   **Required:** `--date <YYYY-MM-DD>` (ensure sufficient data exists).
+*   Outputs are saved to `--output-dir` (default: `./output`), including the critical `training_config.yaml`.
 
 ### 2. Detecting Anomalies
 
-After training, use the `detect` mode to find anomalies in new data.
+**Goal:** Identify potential supply chain attack indicators in new data.
 
 ```bash
 python src/main.py detect --date <YYYY-MM-DD> --threshold <T> [OPTIONS]
 ```
 
-**Required Arguments:**
+*   **Required:** `--date <YYYY-MM-DD>`, `--threshold <T>`.
+*   **Crucial Option:** `--config-save-path <path>` (path to `training_config.yaml` from the relevant training run, default: `./output/training_config.yaml`). Must match the loaded `--model` and `--scaler`.
 
-*   `--date <YYYY-MM-DD>`: The date for which to fetch data and detect anomalies.
-*   `--threshold <T>`: The anomaly score threshold. Scores above this value will be flagged as anomalies.
-
-**Key Options:**
-
-*   `--model <path>`: Path to the trained model file (`.pt`). Defaults to the model in the `./output` directory structure.
-*   `--scaler <path>`: Path to the saved scaler file (`.pkl`). Defaults to the scaler in the `./output` directory.
-*   `--config-save-path <path>`: Path to the `training_config.yaml` saved during training (needed to reconstruct model architecture). Defaults to the one in `./output`.
-*   `--config <path>`: Path to a *detection-specific* YAML config (can override Wazuh connection details, etc., if different from training).
-*   `--gamma <G>`: Override the weight for the reconstruction error component of the anomaly score.
-*   `--help`: Show all available options.
-
-**Example:**
-
+**Example (using defaults from `./output`):**
 ```bash
-# Detect anomalies for 2024-07-11 using default model/scaler paths and threshold 5.0
-python src/main.py detect --date 2024-07-11 --threshold 5.0
+# Train on 2025-04-11
+python src/main.py train --date 2025-04-11 --epochs 10
 
-# Detect using a specific model and scaler with threshold 7.5
-python src/main.py detect --date 2024-07-12 --threshold 7.5 --model ./my_training_run/models/best_model.pt --scaler ./my_training_run/scaler.pkl --config-save-path ./my_training_run/training_config.yaml
+# Detect on 2025-04-12 with threshold 0.6
+python src/main.py detect --date 2025-04-12 --threshold 0.6
 ```
 
-Detected anomalies (timestamps and scores) will be printed to the console.
+## Correlating Findings with Wazuh Dashboard
+
+When the script flags an anomalous time window (e.g., `2025-04-12 16:45:00`):
+
+1.  Go to your Wazuh Dashboard -> Discover tab.
+2.  Filter the time range to that specific window (e.g., `16:45:00` to `16:49:59` for a 5min window).
+3.  Examine the raw alerts to understand *what specific events* (file changes, process starts, network traffic) contributed to the high anomaly score. This helps investigate if it relates to a potential supply chain vector.
+
+## Troubleshooting Common Issues
+
+*   **YAML Error (`...constructor for tag...python/tuple...`)**: Fixed by converting column names to strings before saving `training_config.yaml`. Retrain if using older code.
+*   **Training Error (`Not enough data...`)**: Insufficient data for `--date`. Choose a different date or adjust `model.window_size`.
+*   **Detection Error (`RuntimeError: Error(s) in loading state_dict...`)**: Mismatch between loaded model and `training_config.yaml`. Ensure `--config-save-path` points to the correct file for the loaded `--model`.
+*   **Detection Error (`Wazuh connection details missing...`)**: Config issue. Check `training_config.yaml` loading or base `config/settings.yaml`.
+*   **Data Errors (`KeyError`, `Missing columns...`)**: Columns defined in config don't match fetched Wazuh data. Verify fields.
+*   **Scaler Errors (`ValueError: feature mismatch...`)**: Data features during detection don't match the loaded scaler. Ensure config consistency.
 
 ## Next Steps / Improvements
 
-*   **Correction Logic:** Implement actual correction/response actions in `src/correction.py` (e.g., Wazuh active response integration).
-*   **Thresholding:** Implement more sophisticated thresholding methods (e.g., POT, epsilon from `idps-escape`) instead of a fixed threshold.
-*   **Evaluation:** Add proper evaluation metrics (Precision, Recall, F1-Score) if labeled anomaly data is available.
-*   **Data Handling:** Improve robustness of data loading and preprocessing.
-*   **Feature Engineering:** Experiment with different features and aggregation methods.
-*   **Hyperparameter Tuning:** Optimize model and training parameters.
-*   **Error Handling:** Enhance error handling and logging.
+*   **Refine Features:** Select/engineer features more specific to known supply chain attack indicators.
+*   **Anomaly Explanation:** Automatically retrieve associated raw alerts.
+*   **Response Actions:** Implement `src/correction.py` (e.g., alert SOC, trigger active response).
+*   **Advanced Thresholding:** Use adaptive methods (e.g., POT).
+*   **Evaluation:** Add metrics if labeled attack data is available.
+*   **Output Formatting:** Save results to structured files (CSV/JSON).
