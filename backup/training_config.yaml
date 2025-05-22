@@ -1,0 +1,59 @@
+data:
+  aggregation_config:
+    rule.level:
+    - mean
+    - max
+    - count
+  aggregation_window: 5min
+  columns_config:
+    agent.id: string
+    agent.name: string
+    data.command: string
+    rule.level: int
+    timestamp: datetime
+  date: '2025-04-12'
+  end_time: '23:59:59'
+  numeric_columns:
+  - rule.level_mean
+  - rule.level_max
+  - rule.level_count
+  start_time: 00:00:00
+  time_column: timestamp
+model:
+  alpha: 0.2
+  dropout: 0.3
+  fc_dropout: 0.3
+  forecast_hid_dim: 150
+  forecast_n_layers: 3
+  gru_dropout: 0.3
+  gru_hid_dim: 150
+  gru_layers: 1
+  hidden_size: 100
+  kernel_size: 7
+  n_features: 3
+  recon_hid_dim: 150
+  recon_n_layers: 1
+  target_dims: null
+  use_bias: true
+  use_gatv2: true
+  window_size: 12
+training:
+  batch_size: 128
+  epochs: 1
+  init_lr: 0.001
+  log_dir: logs
+  model_save_path: models
+  output_dir: ./output
+  scaler_file: scaler.pkl
+  use_cuda: true
+  val_split: 0.1
+wazuh:
+  auth:
+    password: 1mrakpb+QN?Yl3y?KspZ3BORG.yMbf2n
+    user: admin
+  host: 172.25.35.113
+  index_prefix: wazuh-alerts-4.x-
+  port: 9200
+  ssl_show_warn: false
+  use_ssl: true
+  verify_certs: false

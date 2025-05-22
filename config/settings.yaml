@@ -1,11 +1,11 @@
 # Configuration for AI-Powered Supply Chain Attack Detection
 
 wazuh:
-  host: 172.22.252.217 # Replace with your Wazuh/OpenSearch host IP or hostname
+  host: 172.25.35.113 # Replace with your Wazuh/OpenSearch host IP or hostname
   port: 9200      # Default OpenSearch port
   auth:
     user: admin  # Replace with your Wazuh/OpenSearch username
-    password: "o5sIK9iPhM8KF4qL5pcY4oN+Rceg*.5V" # Replace with your Wazuh/OpenSearch password
+    password: "1mrakpb+QN?Yl3y?KspZ3BORG.yMbf2n" # Replace with your Wazuh/OpenSearch password
   use_ssl: true
   verify_certs: false # Set to true if using valid, trusted SSL certificates
   ssl_show_warn: false
@@ -33,7 +33,7 @@ data:
   aggregation_window: "5min" # Time window for aggregation (e.g., '1min', '5T', '10S', '1H')
 
 model:
-  window_size: 12         # Number of aggregated intervals per sequence
+  window_size: 9        # Number of aggregated intervals per sequence
   kernel_size: 7          # Kernel size for the initial Conv1D layer
   gru_layers: 1           # Number of GRU layers
   gru_hid_dim: 150        # Hidden dimension for GRU layer
@@ -55,7 +55,7 @@ training:
   epochs: 50            # Number of training epochs
   batch_size: 128       # Batch size for training
   init_lr: 0.001        # Initial learning rate for Adam optimizer
-  val_split: 0.1        # Proportion of data to use for validation (0.0 to disable)
+  val_split: 0.0        # Proportion of data to use for validation (0.0 to disable)
   use_cuda: true        # Attempt to use GPU if available
   output_dir: "./output" # Base directory for all outputs
   model_save_path: "models" # Subdirectory for saved models (relative to output_dir)
